@@ -13,7 +13,7 @@
 
 var module_name = "ASMWrangler";
 var module_title = "ASMWrangler";
-var module_ver = "0.1";
+var module_ver = "0.2";
 
 
 /**
@@ -25,7 +25,7 @@ var module_ver = "0.1";
 function Init()
 {
   addMenuItem("Goto definition", "ASM Wrangler", "findDefinition", "CTRL+ALT+B");
-
+  addMenuItem("Find References", "ASM Wrangler", "findReferences", "CTRL+ALT+N");
   // Menu divider
   addMenuItem("-","ASM Wrangler","","");
 
@@ -236,11 +236,98 @@ function findDefinition()
   }
 
 
-  restr = "(^(({0})|({1}))[\\s]equ)|(^(({2})|({3})))".format(aram, ram, proper, actual);
+  restr = "(^(({0})|({1}))[\\s]equ)|(^(({2})|({3}))\\b)".format(aram, ram, proper, actual);
   var data = findInAllFiles(editor, restr);
 
   var result = print(data, true);
   showResult(result);
+}
+
+
+/**
+ * Function: findReferences
+ * Purpose: Search all editors for references to the the currently seleted
+ *   label or variable. The distinction is made by looking at the content of the
+ *   string. Any branching commands indicate the string is a label. Otherwise,
+ *   the string must be a variable of some type. Matches will be shown in
+ *   the PSPad logging window.
+ *
+ * @return: void
+ */
+function findReferences()
+{
+  var editor = newEditor();
+  editor.assignActiveEditor();
+
+  var restr = editor.selText();
+  if(!restr || restr.length == 0)
+    return;
+
+  var entireLine = editor.lineText();
+  if(!entireLine || entireLine.length == 0)
+    return;
+
+
+  // check is this is some sort of program control instruction
+  re = new RegExp(G_OPCODE_RE.format(G_PROGRAM_CONTROL_RE), 'i');
+  r = entireLine.search(re);
+
+  var results;
+
+  // If true, we have a match. That means we can a program control instruction
+  if (r != -1)
+  {
+    // Find all references to selected text as a label reference
+    opcode = G_OPCODE_RE.format(G_PROGRAM_CONTROL_RE);
+    matchstr = "{0}[\\.blw]?\\b".format(restr);
+    findMe = "{0}\\s{1}".format(opcode, matchstr)
+
+    results = findInAllFiles(editor, findMe);
+
+
+
+  }
+  else
+  {
+    // RAM equates specific
+    if(restr.charAt(0) == 'a')
+    {
+      aram = restr;
+      ram = aram.substring(1);
+    }
+    else
+    {
+      aram = "a{0}".format(restr);
+      ram = restr;
+    }
+
+    // The variable as either equ or RAM pointer
+    targetStr = "((({0})|({1}))([\s]equ)?)".format(aram, ram);
+
+    var patterns = new Array();
+
+    // Otherwise, find all references to text as a variable
+    patterns.push(G_OPCODE_SZ_RE.format(G_PROGRAM_CONTROL_RE));
+    patterns.push(G_OPCODE_SZ_RE.format(G_DATA_MOVEMENT_RE));
+    patterns.push(G_OPCODE_SZ_RE.format(G_ARITHMETIC_RE));
+    patterns.push(G_OPCODE_SZ_RE.format(G_FLOATING_POINT_RE));
+    patterns.push(G_OPCODE_SZ_RE.format(G_LOGICAL_RE));
+    patterns.push(G_OPCODE_SZ_RE.format(G_BITWISE_RE));
+
+    bigPattern = patterns.join("|")
+
+    findMe = "({0})\\s{1}".format(bigPattern, targetStr);
+
+    results = findInAllFiles(editor, findMe);
+  }
+
+
+  if(!results || results.length == 0)
+    results = ["No results found for {0}".format(restr)];
+  else
+    results.splice(0, 0, ["Found {0} results for {1}:".format(results.length, restr)]);
+  print(results, true);
+
 }
 
 
@@ -263,24 +350,24 @@ function print(data, clearLog)
   if(clearLog)
   	logClear();
 
-  var len = data.length;
 
-  for (var x =0; x<len; x++)
+  for (var i =0; i<data.length; i++)
   {
-    line = "{0}".format(data[x]);
+    line = "{0}".format(data[i]);
 
     if(line)
     {
       // Get the filename(lineNum) portion
       splits = line.split("::");
-      if(splits.length < 2)
-	continue;
+      if(splits.length >= 2)
+      {
 
-      fileName = splits[0].substring(0, splits[0].indexOf("("));
-      lineNum = splits[0].substring(splits[0].indexOf("(")+1, splits[0].lastIndexOf(")"));
+        fileName = splits[0].substring(0, splits[0].indexOf("("));
+        lineNum = splits[0].substring(splits[0].indexOf("(")+1, splits[0].lastIndexOf(")"));
 
-      // Log click-to-navigate seems to require only 1 :
-      line = line.replace("::", ":");
+        // Log click-to-navigate seems to require only 1 ":"
+        line = line.replace("::", ":");
+      }
 
     }
 
@@ -393,3 +480,14 @@ if (!String.prototype.format)
     );
   };
 }
+
+
+var G_OPCODE_RE = '\\b{0}\\b';
+var G_OPCODE_SZ_RE = '\\b{0}(\\.[bwl])?\\b';
+var G_PROGRAM_CONTROL_RE = '((FBcc)|(BRA)|(BSR)|(JMP)|(JSR)|([BS])((CC)|(HS)|(CS)|(LO)|(EQ)|(GE)|(GT)|(HI)|(LE)|(LS)|(LT)|(MI)|(NE)|(PL)|(VC)|(VS)))';
+var G_DATA_MOVEMENT_RE = '((PEA)|(LEA)|(UNLK)|(LINK)|(MVS)|(MVZ)|(MOV(3Q)|(E)|(A)|(M)|(CLR))|(F(DMOVE)|(MOVE)|(SMOVE)))';
+var G_ARITHMETIC_RE = '(((ADD)|(SUB))((A)|(I)|(Q)|(X))?)|(CLR)|(CMP((A)|(I))?)|(DIV[SU])|(EXT(B)?)|(MUL[SU])|(NEG(X)?)|(M((AAC)|(AC)|(ASAC)|(SAAC)|(SAC)|(SSAC)))';
+var G_FLOATING_POINT_RE = '((FCMP)|(FINT(RZ)?|F[SD]?)|((ADD)|(DIV)|(MUL)|(SUB)|(ABS)|(NEG)|(SQRT)))';
+var G_LOGICAL_RE = '((AND(I)?)|((E)?OR(I)?)|(NOT)|([AL]{1}((SL)|(SR)))|(SWAP))';
+var G_BITWISE_RE = '((B((CHG)|(CLR)|(TST)|(SET)))|(FF1)|(BITREV)|(BYTEREV))';
+var G_SYS_CTRL_RE = '((FRESTORE)|(FSAVE)|(HALT)|(MOVEC)|(RTE))';
