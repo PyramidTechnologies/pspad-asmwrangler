@@ -16,6 +16,12 @@ Assembly is not known for being IDE friendly. There are a small number of assemb
 *  1st result is opened in a vertical split window or new window if found in another file
 
 
+### Reference Lookup
+*  Lookup all references to selected value
+*  Contextually aware search is aware of operand size modifiers and comments
+*  Results listed in your PSPad log window in ";Clipper" format
+
+
 ### JSR Linter (Coldfire)
 Coldfire has this nasty pitfall that compiles without warning. I you JSR to an offset that is more than a WORD width away, you will branch into oblivion. The fix is to suffic your JSR taget with a .l (long) specifier. I suppose this is the downside to handwritting assembly :)
 * Any vioaltions will be listed in your PSPad log window
